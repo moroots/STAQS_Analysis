@@ -9,6 +9,9 @@ Description:
 """
 #%% 
 
+from atmoz.resources.path_manager import PathManager
+
+paths = PathManager(path_file = "./paths.json")
 
 
 #%% 

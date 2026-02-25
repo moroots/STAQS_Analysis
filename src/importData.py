@@ -19,10 +19,11 @@ import subprocess
 
 from shapely.geometry import Point
 
-from src.timeConversions import h5Dataset_timestamp
+from atmoz.resources.timeConversions import h5Dataset_timestamp
 
 import pickle
 
+# Should be moved to an lookups directory of atmoz or something, but this is the ICARTT header structure as of 2024.
 ict_header = {
     "number_of_lines": (
         "Number of lines in header, file format index "
@@ -206,7 +207,7 @@ def read_h5(filepath):
 
     return data, filepath.name
 
-
+# This should be moved to atmoz.resources or something, but this is a wrapper for h5py datasets that allows lazy loading and full NumPy-like behavior.
 class H5Dataset:
     """Wrap h5py.Dataset for lazy loading with full NumPy-like behavior."""
     def __init__(self, dataset: h5.Dataset):
@@ -266,7 +267,7 @@ class H5Dataset:
         return f"<H5Dataset {self._dataset.name} shape={self._dataset.shape} dtype={self._dataset.dtype}>"
 
 
-
+# This should be moved to atmoz.resources or something, but this is a wrapper for h5py groups that allows dot-access, tab completion, and lazy dataset access.
 class H5Node:
     """Wrap h5py.Group to allow dot-access, tab completion, and lazy dataset access."""
     def __init__(self, obj):
@@ -302,7 +303,7 @@ class H5Node:
         return f"<H5Node {cls} '{self._obj.name}'>"
 
 
-
+# This should be moved to atmoz.resources or something, but this is a utility function to read an HDF5 file and return a wrapped H5Node for lazy access.
 def read_h5_lazy(filepath):
     filepath = Path(filepath)
     f = h5.File(filepath, "r", swmr=True)
@@ -341,6 +342,7 @@ class TOLNet:
             if isinstance(node._obj, h5.File):
                 node._obj.close()
 
+# This should be moved to atmoz.resources or something, but this is a utility function to batch convert HDF4 files to HDF5 using the h4toh5 tool from the HDF Group.
 def convert_hdf4_to_hdf5(h4_dir, h5_dir, h4toh5_exe=r"C:\Program Files\HDF_Group\H4H5\2.2.5\bin\h4toh5convert.exe"):
     """
     Batch convert all HDF4 (.hdf) files in a directory to HDF5 (.h5) using h4toh5 tool.
