@@ -16,13 +16,17 @@ from atmoz.resources.path_manager import PathManager
 from pydantic import BaseModel
 from typing import List, Dict, Any
 
+import matplotlib.pyplot as plt
+
 import pandas as pd
 
-
 data_dir = PathManager("../paths.json").get_path("data_DESKTOP")
-
+fig_dir = PathManager("../paths.json").get_path("figures_GDRIVE")
 
 from atmoz.resources.importData import HSRL2, TOLNet, read_ict, h5Dataset_timestamp, to_df
+from atmoz.resources import makePlots 
+from atmoz.resources import useful_functions, colorbars, plot_utilities, default_plot_params
+
 from shapely.geometry import Point
 import geopandas as gpd
 from pathlib import Path
@@ -77,7 +81,7 @@ def main_import(dir_path: Path):
 
     return tolnet
 
-def fill_time_gaps(df, start_time, stop_time):
+def fill_time_gaps(df, start_time, stop_time, integration_time):
 
     df = df.copy()
 
@@ -86,10 +90,7 @@ def fill_time_gaps(df, start_time, stop_time):
     values = []
 
     # estimate typical integration step
-    durations = (stop_time - start_time).round("1min")
-    unique_timedeltas, counts = np.unique(durations, return_counts=True)
-
-    diff = pd.Timedelta(unique_timedeltas[np.argmax(counts)])
+    diff = pd.Timedelta(integration_time, unit="h")
 
     # first record
     timestamps.append(start_time[0])
@@ -120,3 +121,113 @@ def fill_time_gaps(df, start_time, stop_time):
 tolnet = main_import(data_dir)
 
 
+def plot_curtain_better(lidar, sonde=None, **kwargs):
+    tz = kwargs.pop("tz", "UTC")
+    params = useful_functions.merge_dicts(default_plot_params.tolnet_plot_params, kwargs)
+    
+    cmap, norm = colorbars.tolnet_ozone()
+
+    if not isinstance(lidar["X"], list):
+        lidar = {key: [lidar[key]] for key in lidar.keys()}
+    
+    with plt.rc_context(default_plot_params.curtain_plot_theme):
+        fig, ax = plt.subplots()
+
+        for X, Y, C in zip(lidar["X"], lidar["Y"], lidar["C"]):
+            if isinstance(X, list) and isinstance(Y, list) and isinstance(C, list):
+                for i in range(len(X)):
+                    im = ax.pcolormesh(X[i], Y[i], C[i], cmap=cmap, norm=norm, shading="nearest", alpha=1)
+            else: 
+                im = ax.pcolormesh(X, Y, C, cmap=cmap, norm=norm, shading="nearest", alpha=1)
+        
+        if sonde: 
+            ax.scatter(
+                x = sonde["X"],
+                y = sonde["Y"],
+                c = sonde["C"],
+                s = 100,
+                cmap = cmap, 
+                norm = norm,
+                **sonde.get("scatter_params", {})
+                )
+
+            vline_params = sonde.get("vline_params", {})
+            skip = vline_params.pop("skip", 10) if vline_params and "skip" in vline_params else 10
+
+            ax.vlines(sonde["X"][::skip]-pd.Timedelta(10, unit='min'), ymin=sonde["Y"][::skip] - 0.05, ymax=sonde["Y"][::skip] + 0.05,
+                    **vline_params)
+
+            ax.vlines(sonde["X"][::skip]+pd.Timedelta(10, unit='min'), ymin=sonde["Y"][::skip] - 0.05, ymax=sonde["Y"][::skip] + 0.05,
+                    **vline_params)
+
+        params["fig.colorbar"]["mappable"] = im
+
+        plot_utilities.apply_datetime_axis(ax, tz=tz)
+        
+        plot_utilities.apply_plot_params(fig, ax, **params)
+
+        plt.close()
+    return 
+
+
+#%%
+
+# for instrument_name in tolnet.keys():
+#     dates = 
+#%%
+import matplotlib.dates as mdates
+for instrument_name in tolnet.keys():
+    date_start = []
+    date_stop = []
+    X = []; Y = []; C = []
+    for filename in tolnet[instrument_name].keys():
+        df = fill_time_gaps(
+                tolnet[instrument_name][filename]["df"].copy().drop(columns=["geometry"]),
+                start_time = tolnet[instrument_name][filename]["start_time"],
+                stop_time = tolnet[instrument_name][filename]["stop_time"],
+                integration_time = tolnet[instrument_name][filename]["integration_time"][0]
+                ).sort_index(axis=0).sort_index(axis=1) 
+
+        X.append(df.index)
+        Y.append(df.columns.astype(float) / 1000)
+        C.append(df.values.T * 1000)
+
+        date_start.append(df.index.min())
+        date_stop.append(df.index.max())
+
+    lidar = {
+        "X": X,
+        "Y": Y,
+        "C": C
+    }
+
+    date_start = np.datetime64("2023-07-25")
+    date_stop = np.datetime64("2023-08-16")
+
+    title = f"{instrument_name} [{date_start} - {date_stop}]"
+
+    folder = fig_dir / "instrument_full"
+    folder.mkdir(parents=True, exist_ok=True)
+
+    savename = title.replace(' ', '_').replace('[', '').replace(']', '').replace(',', '').replace('-', '_') + ".png"
+
+    params = {
+        "fig.colorbar": {
+            "label": "Ozone Mixing Ratio (ppbv)"
+            },
+        "ax.set_xlim": [date_start, date_stop],
+        "ax.set_autoscale_on": False,
+        "ax.set_ylim": [0, 10],
+        "ax.set_title": title,
+        "fig.savefig": {
+            "fname": folder / savename,
+            "format": "png",
+            "dpi": 600,
+            "transparent": True
+            },
+        "tz": "America/New_York"
+        }
+
+    plot_curtain_better(lidar, **params)
+
+# %%
